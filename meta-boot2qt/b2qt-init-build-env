@@ -1,0 +1,217 @@
+#!/bin/sh
+############################################################################
+##
+## Copyright (C) 2016 The Qt Company Ltd.
+## Contact: https://www.qt.io/licensing/
+##
+## This file is part of the Boot to Qt meta layer.
+##
+## $QT_BEGIN_LICENSE:GPL$
+## Commercial License Usage
+## Licensees holding valid commercial Qt licenses may use this file in
+## accordance with the commercial license agreement provided with the
+## Software or, alternatively, in accordance with the terms contained in
+## a written agreement between you and The Qt Company. For licensing terms
+## and conditions see https://www.qt.io/terms-conditions. For further
+## information use the contact form at https://www.qt.io/contact-us.
+##
+## GNU General Public License Usage
+## Alternatively, this file may be used under the terms of the GNU
+## General Public License version 3 or (at your option) any later version
+## approved by the KDE Free Qt Foundation. The licenses are as published by
+## the Free Software Foundation and appearing in the file LICENSE.GPL3
+## included in the packaging of this file. Please review the following
+## information to ensure the GNU General Public License requirements will
+## be met: https://www.gnu.org/licenses/gpl-3.0.html.
+##
+## $QT_END_LICENSE$
+##
+############################################################################
+
+set -e
+
+usage() {
+   echo "Usage: $(basename $0) COMMAND [ARGS]"
+   echo
+   echo "Initialize build environment:"
+   echo "  $(basename $0) init --device <name> [--reference <mirror path>] [--internal]"
+   echo "    --device <name>: target device name or 'all'"
+   echo "    --reference <mirror path>: path to local mirror, initialized previously with '$(basename $0) mirror'"
+   echo "    --internal: fetch internal repositories, available only inside The Qt Company network."
+   echo "Initialize local mirror:"
+   echo "  $(basename $0) mirror"
+   echo "List available devices:"
+   echo "  $(basename $0) list-devices"
+}
+
+while test -n "$1"; do
+  case "$1" in
+    "help" | "--help" | "-h")
+      usage
+      exit 0
+      ;;
+    "--reference" | "-r")
+      shift
+      REFERENCE=$1
+      ;;
+    "--device" | "-d")
+      shift
+      DEVICE=$1
+      ;;
+    "--repo-url")
+      shift
+      REPO_URL="--repo-url $1"
+      ;;
+    "--internal")
+      INTERNAL="y"
+      ;;
+    *)
+      if [ -n "$COMMAND" ]; then
+        echo "Unknown argument: $1"
+        usage
+        exit 1
+      fi
+      COMMAND=$1
+      ;;
+  esac
+  shift
+done
+
+if [ -z "${COMMAND}" ]; then
+    usage
+    exit 1
+fi
+
+DIR=$(readlink -f $(dirname $0))
+if [ -n "${REFERENCE}" ]; then
+    REFERENCE="--reference $(readlink -f ${REFERENCE})"
+fi
+
+if [ -z "${REPO_URL}" ]; then
+    REPO_URL="--repo-url git://github.com/theqtcompany/git-repo"
+fi
+
+get_repo() {
+  REPO="./repo"
+  if [ -n "$(command -v repo)" ]; then
+    REPO="repo"
+  elif [ ! -x "./repo" ]; then
+    curl -s https://storage.googleapis.com/git-repo-downloads/repo > "./repo"
+    chmod +x ./repo
+  fi
+}
+
+get_groups() {
+  case ${DEVICE} in
+    all)
+      PROJECT_GROUPS="external"
+    ;;
+    apalis-imx6|colibri-imx6|colibri-vf|colibri-imx7)
+      PROJECT_GROUPS="toradex"
+    ;;
+    imx6qsabresd|imx6dlsabresd|nitrogen6x|imx7dsabresd|imx7s-warp)
+      PROJECT_GROUPS="fsl"
+    ;;
+    smarc-samx6i)
+      PROJECT_GROUPS="smx6"
+    ;;
+    beagleboard|beaglebone|am335x-evm)
+      PROJECT_GROUPS="ti"
+    ;;
+    raspberrypi0|raspberrypi|raspberrypi2|raspberrypi3)
+      PROJECT_GROUPS="rpi"
+    ;;
+    intel-corei7-64)
+      PROJECT_GROUPS="intel"
+    ;;
+    tegra-x1|tegra-t18x)
+      PROJECT_GROUPS="nvidia-tegra"
+    ;;
+    emulator)
+      PROJECT_GROUPS="emulator"
+    ;;
+    jetson-tx1|jetson-tx2|jetson-tk1)
+      PROJECT_GROUPS="jetson"
+    ;;
+    salvator-x|h3ulcb|m3ulcb)
+      PROJECT_GROUPS="renesas-gen3"
+    ;;
+    *)
+      echo "Unknown device configuration, including all meta layers"
+      PROJECT_GROUPS="external"
+    ;;
+  esac
+
+  PROJECT_GROUPS="${PROJECT_GROUPS} default"
+  if [ "${INTERNAL}" = "y" ]; then
+    PROJECT_GROUPS="${PROJECT_GROUPS} internal"
+  fi
+}
+
+list_devices() {
+  echo "Available device configurations:"
+  for device in $(ls $DIR/conf/distro/include/*.conf); do
+    echo "  $(basename ${device%%.conf})"
+  done
+}
+
+mirror() {
+  mkdir -p .repo/manifests
+  cp ${DIR}/scripts/manifest.xml .repo/manifests/
+  MANIFEST="manifest.xml"
+  DEVICE=${DEVICE:-all}
+  get_groups
+  ${REPO} init ${REPO_URL} -u ${PWD}/.repo/repo -b default -m ${MANIFEST} -g "${PROJECT_GROUPS}" --mirror
+  ${REPO} sync
+}
+
+init() {
+  if [ -z "${DEVICE}" ]; then
+    echo "device not defined"
+    usage
+    exit 1
+  fi
+
+  get_groups
+  mkdir -p .repo/manifests
+  rm -f .repo/manifests/manifest*.xml
+  cp ${DIR}/scripts/manifest*.xml .repo/manifests
+  if [ -f .repo/manifests/manifest_${DEVICE}.xml ]; then
+    MANIFEST="manifest_${DEVICE}.xml"
+  else
+    MANIFEST="manifest.xml"
+  fi
+  ${REPO} init ${REPO_URL} -u ${PWD}/.repo/repo -b default -m ${MANIFEST} -g "${PROJECT_GROUPS}" ${REFERENCE}
+  ${REPO} sync --optimized-fetch
+
+  if [ ! -e "sources/meta-boot2qt" ]; then
+    ln -s ${DIR} sources/meta-boot2qt
+  fi
+
+  if [ ! -e "sources/meta-qt5" ]  && [ -e "${DIR}/../meta-qt5" ]; then
+    ln -s $(readlink -f ${DIR}/../meta-qt5) sources/meta-qt5
+  fi
+
+  if [ ! -e "setup-environment.sh" ]; then
+    ln -s ${DIR}/scripts/setup-environment.sh setup-environment.sh
+  fi
+}
+
+get_repo
+
+case "$COMMAND" in
+  "init")
+    init
+  ;;
+  "mirror")
+    mirror
+  ;;
+  "list-devices")
+    list_devices
+  ;;
+  *)
+    echo "Unknown command"
+    usage
+    exit 1
+  ;;
+esac
