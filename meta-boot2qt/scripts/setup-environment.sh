@@ -62,6 +62,9 @@ if [ ! -f ${PWD}/${BUILDDIRECTORY}/conf/bblayers.conf ]; then
     imx6qsabresd|imx6dlsabresd|nitrogen6x|imx7dsabresd|imx7s-warp)
       LAYERSCONF="bblayers.conf.fsl.sample"
     ;;
+    anboard)
+      LAYERSCONF="bblayers.conf.fsl.sample"
+    ;;
     smarc-samx6i)
       LAYERSCONF="bblayers.conf.smx6.sample"
     ;;

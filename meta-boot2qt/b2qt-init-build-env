@@ -112,6 +112,9 @@ get_groups() {
     imx6qsabresd|imx6dlsabresd|nitrogen6x|imx7dsabresd|imx7s-warp)
       PROJECT_GROUPS="fsl"
     ;;
+    anboard)
+      PROJECT_GROUPS="fsl"
+    ;;
     smarc-samx6i)
       PROJECT_GROUPS="smx6"
     ;;
